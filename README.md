@@ -115,29 +115,6 @@ Le système cherche automatiquement `model.h5` dans cet ordre :
 2. `/App Pneumonie/../main_project 3/model.h5` (dossier parent)
 3. `~/Downloads/main_project 3/model.h5` (Downloads)
 
-### Personnalisation
-
-Pour utiliser un modèle personnalisé, modifiez `model_interface.py` :
-
-```python
-def predict(self, image_path: str) -> Dict:
-    # Charger et préprocesser l'image
-    img = self._preprocess_image(image_path)  # 256x256
-    
-    # Faire la prédiction
-    pred = self.model.predict(img, verbose=0)[0][0]
-    
-    # Convertir en label
-    label = 'malade' if pred >= 0.5 else 'sain'
-    confidence = float(pred) if pred >= 0.5 else float(1 - pred)
-    
-    return {
-        'label': label,
-        'confidence': round(confidence, 3),
-        'raw_prediction': round(float(pred), 3)
-    }
-```
-
 ## Workflow Complet
 
 ### 1. Préparateur - Import et Analyse
