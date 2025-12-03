@@ -104,6 +104,174 @@ class DoctorView:
                 self._render_patient_detail(selected_image_id)
         else:
             st.info("Aucun patient ne correspond aux filtres")
+        
+        # Historique des patients validés
+        st.divider()
+        st.subheader("📜 Historique des Patients Validés")
+        
+        # Récupérer tous les patients validés par le médecin
+        images = self.data_manager.get_all_images()
+        all_annotations = self.data_manager.get_all_annotations()
+        medical_annotations = {a.get('image_id'): a for a in all_annotations 
+                              if a.get('user_role') == 'Médecin'}
+        
+        validated_patients = []
+        for img in images:
+            if img['id'] in medical_annotations:
+                ann = medical_annotations[img['id']]
+                patient_id = img.get('patient_id', 'N/A')
+                validated_patients.append({
+                    'image_id': img['id'],
+                    'patient_id': patient_id,
+                    'image': img,
+                    'annotation': ann,
+                    'label': ann.get('label', 'N/A'),
+                    'validated_by': ann.get('user_name', 'N/A'),
+                    'validated_at': ann.get('created_at', 'N/A')
+                })
+        
+        if not validated_patients:
+            st.info("Aucun patient validé pour le moment")
+        else:
+            st.write(f"**{len(validated_patients)} patient(s) validé(s)**")
+            
+            # Créer une liste déroulante pour sélectionner un patient
+            patient_options = {
+                f"{p['patient_id']} - {p['image'].get('exam_date', 'N/A')} - {p['label']}": p['image_id']
+                for p in validated_patients
+            }
+            
+            selected_patient_label = st.selectbox(
+                "Sélectionner un patient pour voir son historique",
+                list(patient_options.keys()),
+                key="history_patient_select"
+            )
+            
+            if selected_patient_label:
+                selected_image_id = patient_options[selected_patient_label]
+                selected_patient = next(p for p in validated_patients if p['image_id'] == selected_image_id)
+                
+                # Afficher les informations du patient
+                st.write("---")
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.write(f"**ID Patient:** {selected_patient['patient_id']}")
+                with col2:
+                    st.write(f"**Diagnostic:** {selected_patient['label']}")
+                with col3:
+                    st.write(f"**Validé par:** {selected_patient['validated_by']}")
+                
+                st.write(f"**Date de validation:** {selected_patient['validated_at']}")
+                
+                # Récupérer toutes les annotations pour ce patient (historique complet)
+                patient_annotations = [a for a in all_annotations 
+                                      if a.get('image_id') == selected_image_id]
+                patient_annotations.sort(key=lambda x: x.get('version', 0))
+                
+                # Récupérer l'audit log
+                audit_log = self.data_manager.get_audit_log(selected_image_id)
+                
+                # Afficher l'historique des annotations
+                st.subheader("📋 Historique des Modifications")
+                
+                if patient_annotations or audit_log:
+                    # Combiner et trier par date
+                    history_entries = []
+                    
+                    # Ajouter les annotations
+                    for ann in patient_annotations:
+                        history_entries.append({
+                            'type': 'annotation',
+                            'timestamp': ann.get('created_at', ''),
+                            'user': ann.get('user_name', 'N/A'),
+                            'role': ann.get('user_role', 'N/A'),
+                            'version': ann.get('version', 0),
+                            'label': ann.get('label', 'N/A'),
+                            'confidence': ann.get('confidence', 0.0),
+                            'notes': ann.get('notes', ''),
+                            'data': ann
+                        })
+                    
+                    # Ajouter les entrées d'audit
+                    for entry in audit_log:
+                        history_entries.append({
+                            'type': 'audit',
+                            'timestamp': entry.get('timestamp', ''),
+                            'user': entry.get('user_name', 'N/A'),
+                            'action': entry.get('action', 'N/A'),
+                            'details': entry.get('details', {}),
+                            'data': entry
+                        })
+                    
+                    # Trier par timestamp
+                    history_entries.sort(key=lambda x: x.get('timestamp', ''))
+                    
+                    # Afficher dans une liste déroulante (expandable)
+                    for entry in history_entries:
+                        timestamp = entry.get('timestamp', 'N/A')
+                        user = entry.get('user', 'N/A')
+                        
+                        if entry['type'] == 'annotation':
+                            role = entry.get('role', 'N/A')
+                            version = entry.get('version', 0)
+                            label = entry.get('label', 'N/A')
+                            confidence = entry.get('confidence', 0.0)
+                            notes = entry.get('notes', '')
+                            
+                            with st.expander(f"📝 Version {version} - {role} - {timestamp} - {user}"):
+                                st.write(f"**Type:** Annotation")
+                                st.write(f"**Rôle:** {role}")
+                                st.write(f"**Version:** {version}")
+                                st.write(f"**Diagnostic:** {label}")
+                                st.write(f"**Confiance:** {confidence:.2f}")
+                                if notes:
+                                    st.write(f"**Notes:** {notes}")
+                                
+                                # Afficher les informations supplémentaires
+                                additional_info = entry['data'].get('additional_info', {})
+                                if additional_info:
+                                    st.write("**Informations complémentaires:**")
+                                    if additional_info.get('symptoms'):
+                                        st.write(f"- Symptômes: {additional_info.get('symptoms')}")
+                                    if additional_info.get('comorbidities'):
+                                        st.write(f"- Comorbidités: {additional_info.get('comorbidities')}")
+                                    if additional_info.get('spo2'):
+                                        st.write(f"- SpO₂: {additional_info.get('spo2')}%")
+                                    if additional_info.get('temperature'):
+                                        st.write(f"- Température: {additional_info.get('temperature')}°C")
+                                    if additional_info.get('crp'):
+                                        st.write(f"- CRP: {additional_info.get('crp')} mg/L")
+                                    if additional_info.get('image_quality'):
+                                        st.write(f"- Qualité image: {additional_info.get('image_quality')}")
+                                    if additional_info.get('urgency'):
+                                        st.write(f"- Urgence: {additional_info.get('urgency')}")
+                                    if additional_info.get('validated_at'):
+                                        st.write(f"- Validé le: {additional_info.get('validated_at')}")
+                        
+                        elif entry['type'] == 'audit':
+                            action = entry.get('action', 'N/A')
+                            details = entry.get('details', {})
+                            
+                            with st.expander(f"🔍 {action} - {timestamp} - {user}"):
+                                st.write(f"**Type:** Action système")
+                                st.write(f"**Action:** {action}")
+                                
+                                if details:
+                                    st.write("**Détails:**")
+                                    if 'old_label' in details and 'new_label' in details:
+                                        st.write(f"- Changement: {details.get('old_label')} → {details.get('new_label')}")
+                                    if 'version' in details:
+                                        st.write(f"- Version: {details.get('version')}")
+                                    if 'image_ids' in details:
+                                        st.write(f"- Images concernées: {len(details.get('image_ids', []))}")
+                                    if 'count' in details:
+                                        st.write(f"- Nombre: {details.get('count')}")
+                                    if 'action_type' in details:
+                                        st.write(f"- Type d'action: {details.get('action_type')}")
+                                    if 'new_status' in details:
+                                        st.write(f"- Nouveau statut: {details.get('new_status')}")
+                else:
+                    st.info("Aucun historique disponible pour ce patient")
     
     def _render_patient_detail(self, image_id):
         """Affiche la vue détaillée d'un patient"""
@@ -515,121 +683,54 @@ class DoctorView:
                     st.divider()
                     st.subheader("Mettre à jour le Statut")
                     
-                    # Si le traitement est déjà terminé, informer l'utilisateur
-                    if treatment.get('status') == 'termine':
-                        st.info("✅ Ce traitement est terminé. Allez dans l'onglet '📝 Finalisation du dossier' pour consigner le verdict final.")
-                    else:
-                        with st.form(f"update_status_form_{image['id']}"):
-                            # Options de statut avec possibilité de terminer
-                            status_options = ['en_traitement', 'en_attente_examens', 'hospitalise', 'termine']
-                            current_status = treatment.get('status', 'en_traitement')
-                            
+                    with st.form(f"update_status_form_{image['id']}"):
+                        # Options de statut sans "termine"
+                        status_options = ['en_traitement', 'en_attente_examens', 'hospitalise']
+                        current_status = treatment.get('status', 'en_traitement')
+                        
+                        # Si le statut actuel est "termine", ne pas l'afficher dans les options
+                        if current_status == 'termine':
+                            st.info("✅ Ce traitement est terminé. Allez dans l'onglet '📝 Finalisation du dossier' pour consigner le verdict final.")
+                            new_status = 'termine'  # Garder le statut actuel
+                        else:
                             new_status = st.selectbox(
                                 "Nouveau statut",
                                 status_options,
                                 index=status_options.index(current_status) if current_status in status_options else 0,
-                                key=f"status_{image['id']}",
-                                help="Sélectionnez 'termine' pour finaliser le traitement et le déplacer vers l'onglet 'Finalisation du dossier'"
+                                key=f"status_{image['id']}"
                             )
-                            
-                            status_notes = st.text_area(
-                                "Notes sur le changement de statut",
-                                key=f"status_notes_{image['id']}"
+                        
+                        status_notes = st.text_area(
+                            "Notes sur le changement de statut",
+                            key=f"status_notes_{image['id']}"
+                        )
+                        
+                        if st.form_submit_button("💾 Mettre à jour le Statut", type="primary"):
+                            self.data_manager.update_treatment_status(
+                                image['id'],
+                                st.session_state.current_user_name,
+                                new_status,
+                                status_notes
                             )
-                            
-                            if st.form_submit_button("💾 Mettre à jour le Statut", type="primary"):
-                                self.data_manager.update_treatment_status(
-                                    image['id'],
-                                    st.session_state.current_user_name,
-                                    new_status,
-                                    status_notes
-                                )
-                                st.success("✅ Statut mis à jour")
-                                st.rerun()
+                            st.success("✅ Statut mis à jour")
+                            st.rerun()
                     
-                    # Validation du patient et envoi vers résultats finalisés
+                    # Bouton pour envoyer vers finalisation
                     st.divider()
-                    st.subheader("✅ Validation Clinique et Finalisation")
+                    st.subheader("Finalisation")
                     
-                    with st.form(f"validation_form_{image['id']}"):
-                        # Récupérer la classification actuelle
-                        current_label = 'sain'
-                        if annotation:
-                            if is_validated:
-                                current_label = latest_medical.get('label', annotation.get('label', 'sain'))
-                            else:
-                                current_label = annotation.get('label', 'sain')
-                        
-                        # Label de diagnostic final
-                        final_label = st.radio(
-                            "Diagnostic Final",
-                            ['sain', 'malade'],
-                            index=0 if current_label == 'sain' else 1,
-                            help="Classification finale basée sur votre jugement clinique"
-                        )
-                        
-                        # Confiance du médecin
-                        medical_confidence = st.slider(
-                            "Confiance du diagnostic",
-                            min_value=0.0,
-                            max_value=1.0,
-                            value=0.9,
-                            step=0.01,
-                            key=f"confidence_{image['id']}"
-                        )
-                        
-                        # Commentaire clinique
-                        clinical_notes = st.text_area(
-                            "Commentaire clinique",
-                            placeholder="Ajoutez vos observations cliniques, raisonnement, etc.",
-                            key=f"clinical_notes_{image['id']}"
-                        )
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            submitted_validate = st.form_submit_button("✅ Valider le Diagnostic", type="primary")
-                        with col2:
-                            submitted_finalize = st.form_submit_button("✅ Valider et Finaliser", type="primary")
-                        
-                        if submitted_validate or submitted_finalize:
-                            # Créer ou mettre à jour l'annotation médicale
-                            medical_annotation_data = {
-                                'label': final_label,
-                                'confidence': medical_confidence,
-                                'notes': clinical_notes,
-                                'user_role': 'Médecin',
-                                'additional_info': {
-                                    'validated_at': datetime.now().isoformat()
-                                }
-                            }
-                            
-                            # Vérifier s'il existe déjà une annotation médicale
-                            if medical_annotations:
-                                # Mettre à jour
-                                self.data_manager.update_annotation(
-                                    image['id'],
-                                    st.session_state.current_user_name,
-                                    medical_annotation_data
-                                )
-                            else:
-                                # Créer
-                                self.data_manager.add_annotation({
-                                    'image_id': image['id'],
-                                    'patient_id': image.get('patient_id'),
-                                    **medical_annotation_data,
-                                    'user_name': st.session_state.current_user_name
-                                })
-                            
-                            # Si on finalise, marquer aussi comme finalisé
-                            if submitted_finalize:
-                                self.data_manager.mark_batch_finalized(
-                                    [image['id']],
-                                    st.session_state.current_user_name
-                                )
-                                st.success("✅ Diagnostic validé et patient finalisé - Disponible dans les résultats finalisés")
-                            else:
-                                st.success("✅ Diagnostic validé - Patient disponible dans les résultats finalisés")
-                            
+                    if treatment.get('status') == 'termine':
+                        st.info("✅ Ce traitement a déjà été envoyé pour finalisation. Allez dans l'onglet '📝 Finalisation du dossier' pour consigner le verdict final.")
+                    else:
+                        if st.button("📝 Envoyer pour Finalisation", type="primary", key=f"finalize_{image['id']}"):
+                            # Mettre le statut à "termine" pour déplacer vers l'onglet de finalisation
+                            self.data_manager.update_treatment_status(
+                                image['id'],
+                                st.session_state.current_user_name,
+                                'termine',
+                                "Traitement terminé - Envoyé pour finalisation"
+                            )
+                            st.success("✅ Dossier envoyé pour finalisation. Allez dans l'onglet '📝 Finalisation du dossier' pour consigner le verdict final.")
                             st.rerun()
     
     def _render_finalization_tab(self):
