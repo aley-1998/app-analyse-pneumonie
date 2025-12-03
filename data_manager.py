@@ -387,6 +387,36 @@ class DataManager:
         
         return patients_in_treatment
     
+    def get_patients_with_completed_treatment(self) -> List[Dict]:
+        """Récupère tous les patients avec traitement terminé (statut 'termine')"""
+        images = self._load_json(self.images_file)
+        annotations = self._load_json(self.annotations_file)
+        
+        # Créer un dictionnaire des annotations les plus récentes par image
+        latest_annotations = {}
+        for ann in annotations:
+            img_id = ann.get('image_id')
+            if img_id:
+                if img_id not in latest_annotations:
+                    latest_annotations[img_id] = ann
+                elif ann.get('version', 0) > latest_annotations[img_id].get('version', 0):
+                    latest_annotations[img_id] = ann
+        
+        # Filtrer les images avec traitement terminé
+        completed_patients = []
+        for img in images:
+            ann = latest_annotations.get(img['id'])
+            if ann and ann.get('additional_info', {}).get('treatment'):
+                treatment = ann['additional_info']['treatment']
+                if treatment.get('status') == 'termine':
+                    completed_patients.append({
+                        'image': img,
+                        'annotation': ann,
+                        'treatment': treatment
+                    })
+        
+        return completed_patients
+    
     # ========== Journalisation ==========
     
     def _log_change(self, user_name: str, action: str, details: Dict):
